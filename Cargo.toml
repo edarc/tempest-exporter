@@ -1,0 +1,25 @@
+[package]
+name = "tempest-exporter"
+description = "Exporter for WeatherFlow Tempest local UDP API"
+version = "0.1.0"
+authors = ["Kyle Schaffrick <kyle@raidi.us>"]
+edition = "2021"
+keywords = ["weather", "weatherflow", "tempest", "mqtt", "prometheus"]
+license = "MIT OR Apache-2.0"
+exclude = [
+	".gitignore",
+]
+
+[dependencies]
+anyhow = "1.0"
+log = { version = "0.4", features = [ "serde" ] }
+simple_logger = "1.16"
+structopt = "0.3"
+
+[dependencies.tokio]
+version = "1.15"
+features = [
+	"macros",
+	"rt-multi-thread",
+	"net",
+]
