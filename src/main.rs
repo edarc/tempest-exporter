@@ -12,8 +12,8 @@ use tokio_stream::StreamExt;
 #[derive(StructOpt, Clone, Debug)]
 pub struct StationParams {
     /// Station elevation in meters - used to compute barometric pressure.
-    #[structopt(long)]
-    station_elevation: f64,
+    #[structopt(long = "station-elevation")]
+    pub elevation: f64,
 }
 
 #[derive(StructOpt, Debug)]

@@ -17,6 +17,7 @@ pub struct ExportedMetrics {
     observation_wind_avg: WindMetrics,
     observation_wind_gust: WindMetrics,
     observation_station_pressure: Gauge,
+    observation_barometric_pressure: Gauge,
     observation_temperature: Gauge,
     observation_relative_humidity: Gauge,
 }
@@ -61,6 +62,11 @@ impl ExportedMetrics {
                 "Current station pressure (hPa)",
             ))
             .unwrap(),
+            observation_barometric_pressure: Gauge::with_opts(station(
+                "observation_barometric_pressure_hpa",
+                "Current barometric pressure, mean sea level (hPa)",
+            ))
+            .unwrap(),
             observation_temperature: Gauge::with_opts(station(
                 "observation_temperature_deg_c",
                 "Current temperature (°C)",
@@ -89,6 +95,9 @@ impl ExportedMetrics {
         self.observation_wind_gust.register_all(registry);
         registry
             .register(Box::new(self.observation_station_pressure.clone()))
+            .unwrap();
+        registry
+            .register(Box::new(self.observation_barometric_pressure.clone()))
             .unwrap();
         registry
             .register(Box::new(self.observation_temperature.clone()))
@@ -146,6 +155,9 @@ impl ExportTo for decoder::Observation {
         metrics
             .observation_station_pressure
             .set(self.station_pressure);
+        metrics
+            .observation_barometric_pressure
+            .set(self.barometric_pressure(station_params.elevation));
         metrics.observation_temperature.set(self.air_temperature);
         metrics
             .observation_relative_humidity

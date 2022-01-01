@@ -153,7 +153,7 @@ const G_OVER_RD_LAMBDA: f64 = -G / (R_SUB_D * LAMBDA);
 const ZERO_C_KELVIN: f64 = 273.15;
 
 impl Observation {
-    pub fn baro_pressure(&self, station_elevation: f64) -> f64 {
+    pub fn barometric_pressure(&self, station_elevation: f64) -> f64 {
         let t_kelvin = self.air_temperature + ZERO_C_KELVIN;
         let ratio = (1.0 + (LAMBDA * station_elevation) / (t_kelvin - LAMBDA * station_elevation))
             .powf(-G_OVER_RD_LAMBDA);
