@@ -1,5 +1,6 @@
 mod decoder;
 mod exporter;
+mod publisher;
 mod reader;
 mod receiver;
 
@@ -21,10 +22,33 @@ pub struct StationParams {
 }
 
 #[derive(StructOpt, Debug)]
+pub struct MqttParams {
+    /// Port to use for MQTT broker
+    #[structopt(long, default_value = "1883")]
+    mqtt_port: u16,
+
+    /// Address of MQTT broker
+    #[structopt(long)]
+    mqtt_broker: String,
+
+    /// MQTT username
+    #[structopt(long)]
+    mqtt_username: String,
+
+    /// MQTT password
+    #[structopt(long)]
+    mqtt_password: String,
+}
+
+#[derive(StructOpt, Debug)]
 struct Opt {
     /// Port to bind the Prometheus metrics server
     #[structopt(long, default_value = "8080")]
     metric_port: u16,
+
+    /// MQTT parameters
+    #[structopt(flatten)]
+    mqtt_params: MqttParams,
 
     /// Station parameters
     #[structopt(flatten)]
@@ -48,11 +72,13 @@ async fn main() -> anyhow::Result<()> {
     let mut dec = decoder::new(rdr);
 
     let exporter = Arc::new(exporter::Exporter::new(opt.station_params.clone()));
+    let publisher = publisher::Publisher::new(opt.station_params.clone(), opt.mqtt_params);
 
     let mut alive = false;
 
     while let Some(msg) = dec.next().await {
         exporter.handle_report(&msg);
+        publisher.handle_report(&msg);
         if !alive {
             alive = true;
             info!("Tempest API is alive");
@@ -87,6 +113,7 @@ async fn main() -> anyhow::Result<()> {
         loop {
             if let Some(msg) = dec.next().await {
                 exporter.handle_report(&msg);
+                publisher.handle_report(&msg);
             } else {
                 break;
             }
