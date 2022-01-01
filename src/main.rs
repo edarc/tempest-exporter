@@ -9,8 +9,19 @@ use simple_logger::SimpleLogger;
 use structopt::StructOpt;
 use tokio_stream::StreamExt;
 
+#[derive(StructOpt, Clone, Debug)]
+pub struct StationParams {
+    /// Station elevation in meters - used to compute barometric pressure.
+    #[structopt(long)]
+    station_elevation: f64,
+}
+
 #[derive(StructOpt, Debug)]
-struct Opt {}
+struct Opt {
+    /// Station parameters
+    #[structopt(flatten)]
+    station_params: StationParams,
+}
 
 #[tokio::main]
 async fn main() -> anyhow::Result<()> {
@@ -28,7 +39,7 @@ async fn main() -> anyhow::Result<()> {
     let rdr = reader::new(rx);
     let mut dec = decoder::new(rdr);
 
-    let exporter = exporter::Exporter::new();
+    let exporter = exporter::Exporter::new(opt.station_params.clone());
 
     while let Some(msg) = dec.next().await {
         exporter.handle_report(&msg);

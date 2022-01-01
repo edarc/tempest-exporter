@@ -4,6 +4,7 @@ use log::info;
 use prometheus::{Encoder, Gauge, IntCounterVec, IntGauge, Opts, Registry, TextEncoder};
 
 use crate::decoder;
+use crate::StationParams;
 use wind_metrics::WindMetrics;
 
 pub struct ExportedMetrics {
@@ -23,6 +24,7 @@ pub struct ExportedMetrics {
 pub struct Exporter {
     metrics: ExportedMetrics,
     registry: Registry,
+    station_params: StationParams,
 }
 
 impl ExportedMetrics {
@@ -98,11 +100,11 @@ impl ExportedMetrics {
 }
 
 trait ExportTo {
-    fn export_to(&self, metrics: &ExportedMetrics);
+    fn export_to(&self, metrics: &ExportedMetrics, station_params: &StationParams);
 }
 
 impl ExportTo for decoder::PrecipEvent {
-    fn export_to(&self, metrics: &ExportedMetrics) {
+    fn export_to(&self, metrics: &ExportedMetrics, _station_params: &StationParams) {
         metrics
             .exporter_messages_received
             .with_label_values(&["precip_event"])
@@ -111,7 +113,7 @@ impl ExportTo for decoder::PrecipEvent {
 }
 
 impl ExportTo for decoder::StrikeEvent {
-    fn export_to(&self, metrics: &ExportedMetrics) {
+    fn export_to(&self, metrics: &ExportedMetrics, _station_params: &StationParams) {
         metrics
             .exporter_messages_received
             .with_label_values(&["strike_event"])
@@ -120,7 +122,7 @@ impl ExportTo for decoder::StrikeEvent {
 }
 
 impl ExportTo for decoder::RapidWind {
-    fn export_to(&self, metrics: &ExportedMetrics) {
+    fn export_to(&self, metrics: &ExportedMetrics, _station_params: &StationParams) {
         metrics
             .exporter_messages_received
             .with_label_values(&["rapid_wind"])
@@ -130,7 +132,7 @@ impl ExportTo for decoder::RapidWind {
 }
 
 impl ExportTo for decoder::Observation {
-    fn export_to(&self, metrics: &ExportedMetrics) {
+    fn export_to(&self, metrics: &ExportedMetrics, station_params: &StationParams) {
         metrics
             .exporter_messages_received
             .with_label_values(&["observation"])
@@ -152,7 +154,7 @@ impl ExportTo for decoder::Observation {
 }
 
 impl ExportTo for decoder::DeviceStatus {
-    fn export_to(&self, metrics: &ExportedMetrics) {
+    fn export_to(&self, metrics: &ExportedMetrics, _station_params: &StationParams) {
         metrics
             .exporter_messages_received
             .with_label_values(&["device_status"])
@@ -161,7 +163,7 @@ impl ExportTo for decoder::DeviceStatus {
 }
 
 impl ExportTo for decoder::HubStatus {
-    fn export_to(&self, metrics: &ExportedMetrics) {
+    fn export_to(&self, metrics: &ExportedMetrics, _station_params: &StationParams) {
         metrics
             .exporter_messages_received
             .with_label_values(&["hub_status"])
@@ -170,11 +172,15 @@ impl ExportTo for decoder::HubStatus {
 }
 
 impl Exporter {
-    pub fn new() -> Self {
+    pub fn new(station_params: StationParams) -> Self {
         let metrics = ExportedMetrics::new();
         let mut registry = Registry::new();
         metrics.register_all(&mut registry);
-        Self { metrics, registry }
+        Self {
+            metrics,
+            registry,
+            station_params,
+        }
     }
 
     pub fn dump(&self) {
@@ -188,12 +194,12 @@ impl Exporter {
     pub fn handle_report(&self, msg: &decoder::TempestMsg) {
         use decoder::TempestMsg as TM;
         match msg {
-            TM::PrecipEvent(pe) => pe.export_to(&self.metrics),
-            TM::StrikeEvent(se) => se.export_to(&self.metrics),
-            TM::RapidWind(rw) => rw.export_to(&self.metrics),
-            TM::Observation(obs) => obs.export_to(&self.metrics),
-            TM::DeviceStatus(ds) => ds.export_to(&self.metrics),
-            TM::HubStatus(hs) => hs.export_to(&self.metrics),
+            TM::PrecipEvent(pe) => pe.export_to(&self.metrics, &self.station_params),
+            TM::StrikeEvent(se) => se.export_to(&self.metrics, &self.station_params),
+            TM::RapidWind(rw) => rw.export_to(&self.metrics, &self.station_params),
+            TM::Observation(obs) => obs.export_to(&self.metrics, &self.station_params),
+            TM::DeviceStatus(ds) => ds.export_to(&self.metrics, &self.station_params),
+            TM::HubStatus(hs) => hs.export_to(&self.metrics, &self.station_params),
         }
     }
 }
