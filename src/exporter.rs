@@ -8,6 +8,45 @@ use crate::decoder;
 use crate::StationParams;
 use wind_metrics::WindMetrics;
 
+pub struct Exporter {
+    metrics: ExportedMetrics,
+    registry: Registry,
+    station_params: StationParams,
+}
+
+impl Exporter {
+    pub fn new(station_params: StationParams) -> Self {
+        let metrics = ExportedMetrics::new();
+        let mut registry = Registry::new();
+        metrics.register_all(&mut registry);
+        Self {
+            metrics,
+            registry,
+            station_params,
+        }
+    }
+
+    pub fn encode(&self) -> Vec<u8> {
+        let mut buffer = vec![];
+        let encoder = TextEncoder::new();
+        let metric_families = self.registry.gather();
+        encoder.encode(&metric_families, &mut buffer).unwrap();
+        buffer
+    }
+
+    pub fn handle_report(&self, msg: &decoder::TempestMsg) {
+        use decoder::TempestMsg as TM;
+        match msg {
+            TM::PrecipEvent(pe) => pe.export_to(&self.metrics, &self.station_params),
+            TM::StrikeEvent(se) => se.export_to(&self.metrics, &self.station_params),
+            TM::RapidWind(rw) => rw.export_to(&self.metrics, &self.station_params),
+            TM::Observation(obs) => obs.export_to(&self.metrics, &self.station_params),
+            TM::DeviceStatus(ds) => ds.export_to(&self.metrics, &self.station_params),
+            TM::HubStatus(hs) => hs.export_to(&self.metrics, &self.station_params),
+        }
+    }
+}
+
 pub struct ExportedMetrics {
     exporter_messages_received: IntCounterVec,
 
@@ -28,12 +67,6 @@ pub struct ExportedMetrics {
     observation_irradiance: Gauge,
     observation_uv_index: Gauge,
     observation_rain: Histogram,
-}
-
-pub struct Exporter {
-    metrics: ExportedMetrics,
-    registry: Registry,
-    station_params: StationParams,
 }
 
 impl ExportedMetrics {
@@ -261,38 +294,5 @@ impl ExportTo for decoder::HubStatus {
             .exporter_messages_received
             .with_label_values(&["hub_status"])
             .inc();
-    }
-}
-
-impl Exporter {
-    pub fn new(station_params: StationParams) -> Self {
-        let metrics = ExportedMetrics::new();
-        let mut registry = Registry::new();
-        metrics.register_all(&mut registry);
-        Self {
-            metrics,
-            registry,
-            station_params,
-        }
-    }
-
-    pub fn encode(&self) -> Vec<u8> {
-        let mut buffer = vec![];
-        let encoder = TextEncoder::new();
-        let metric_families = self.registry.gather();
-        encoder.encode(&metric_families, &mut buffer).unwrap();
-        buffer
-    }
-
-    pub fn handle_report(&self, msg: &decoder::TempestMsg) {
-        use decoder::TempestMsg as TM;
-        match msg {
-            TM::PrecipEvent(pe) => pe.export_to(&self.metrics, &self.station_params),
-            TM::StrikeEvent(se) => se.export_to(&self.metrics, &self.station_params),
-            TM::RapidWind(rw) => rw.export_to(&self.metrics, &self.station_params),
-            TM::Observation(obs) => obs.export_to(&self.metrics, &self.station_params),
-            TM::DeviceStatus(ds) => ds.export_to(&self.metrics, &self.station_params),
-            TM::HubStatus(hs) => hs.export_to(&self.metrics, &self.station_params),
-        }
     }
 }
