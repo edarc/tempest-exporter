@@ -1,12 +1,16 @@
+mod decoder;
+mod exporter;
+mod reader;
+mod receiver;
+
 use anyhow::Context;
-use log::{info, debug, LevelFilter};
+use log::{debug, info, LevelFilter};
 use simple_logger::SimpleLogger;
 use structopt::StructOpt;
-use tokio::net::UdpSocket;
+use tokio_stream::StreamExt;
 
 #[derive(StructOpt, Debug)]
-struct Opt {
-}
+struct Opt {}
 
 #[tokio::main]
 async fn main() -> anyhow::Result<()> {
@@ -20,11 +24,20 @@ async fn main() -> anyhow::Result<()> {
         .unwrap();
     info!("Starting Tempest exporter");
 
-    let input_sock = UdpSocket::bind("0.0.0.0:50222").await?;
-    let mut buf = [0; 1024];
-    loop {
-        let (len, addr) = input_sock.recv_from(&mut buf).await?;
-        let json = std::str::from_utf8(&buf[..len])?;
-        debug!("{}", json);
+    let rx = receiver::Receiver::new().await?;
+    let rdr = reader::new(rx);
+    let mut dec = decoder::new(rdr);
+
+    let exporter = exporter::Exporter::new();
+
+    while let Some(msg) = dec.next().await {
+        exporter.handle_report(&msg);
+
+        use decoder::TempestMsg as TM;
+        match msg {
+            TM::RapidWind(_) => exporter.dump(),
+            _ => debug!("{:#?}", msg),
+        }
     }
+    Ok(())
 }
