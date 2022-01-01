@@ -1,6 +1,5 @@
 mod wind_metrics;
 
-use log::info;
 use prometheus::{
     Encoder, Gauge, Histogram, HistogramOpts, IntCounterVec, IntGauge, Opts, Registry, TextEncoder,
 };
@@ -277,12 +276,12 @@ impl Exporter {
         }
     }
 
-    pub fn dump(&self) {
+    pub fn encode(&self) -> Vec<u8> {
         let mut buffer = vec![];
         let encoder = TextEncoder::new();
         let metric_families = self.registry.gather();
         encoder.encode(&metric_families, &mut buffer).unwrap();
-        info!("Metric dump\n{}", String::from_utf8(buffer).unwrap());
+        buffer
     }
 
     pub fn handle_report(&self, msg: &decoder::TempestMsg) {

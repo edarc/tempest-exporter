@@ -4,7 +4,7 @@ use std::str::FromStr;
 use anyhow::{anyhow, bail};
 use chrono::{DateTime, Duration, NaiveDateTime, Utc};
 use futures_core::stream::Stream;
-use log::{info, warn};
+use log::warn;
 use tokio_stream::StreamExt;
 
 use crate::reader::{self, RawTempestMsg};
