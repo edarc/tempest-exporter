@@ -1,7 +1,9 @@
 mod wind_metrics;
 
 use log::info;
-use prometheus::{Encoder, Gauge, IntCounterVec, IntGauge, Opts, Registry, TextEncoder};
+use prometheus::{
+    Encoder, Gauge, Histogram, HistogramOpts, IntCounterVec, IntGauge, Opts, Registry, TextEncoder,
+};
 
 use crate::decoder;
 use crate::StationParams;
@@ -20,6 +22,13 @@ pub struct ExportedMetrics {
     observation_barometric_pressure: Gauge,
     observation_temperature: Gauge,
     observation_relative_humidity: Gauge,
+    observation_dew_point: Gauge,
+    observation_wet_bulb_temperature: Gauge,
+    observation_apparent_temperature: Gauge,
+    observation_illuminance: Gauge,
+    observation_irradiance: Gauge,
+    observation_uv_index: Gauge,
+    observation_rain: Histogram,
 }
 
 pub struct Exporter {
@@ -77,6 +86,47 @@ impl ExportedMetrics {
                 "Current relative humidity (%)",
             ))
             .unwrap(),
+            observation_dew_point: Gauge::with_opts(station(
+                "observation_dew_point_deg_c",
+                "Current dew point (°C)",
+            ))
+            .unwrap(),
+            observation_wet_bulb_temperature: Gauge::with_opts(station(
+                "observation_wet_bulb_temperature_deg_c",
+                "Current wet bulb temperature (°C)",
+            ))
+            .unwrap(),
+            observation_apparent_temperature: Gauge::with_opts(station(
+                "observation_apparent_temperature_deg_c",
+                "Current apparent temperature, Steadman formula (°C)",
+            ))
+            .unwrap(),
+            observation_illuminance: Gauge::with_opts(station(
+                "observation_illuminance_lux",
+                "Current photometric illuminance (lux)",
+            ))
+            .unwrap(),
+            observation_irradiance: Gauge::with_opts(station(
+                "observation_irradiance_w_per_m2",
+                "Current radiometric irradiance (W·m^-2)",
+            ))
+            .unwrap(),
+            observation_uv_index: Gauge::with_opts(station(
+                "observation_uv_index",
+                "Current ultraviolet index",
+            ))
+            .unwrap(),
+            observation_rain: Histogram::with_opts(
+                HistogramOpts::from(station("observation_rain", "Rain observed (mm·min^-1)"))
+                    .buckets(
+                        prometheus::exponential_buckets(1.00, 10.0f64.powf(0.2), 17)
+                            .unwrap()
+                            .into_iter()
+                            .map(|v| v.round() / 1000.0)
+                            .collect(),
+                    ),
+            )
+            .unwrap(),
         }
     }
 
@@ -104,6 +154,27 @@ impl ExportedMetrics {
             .unwrap();
         registry
             .register(Box::new(self.observation_relative_humidity.clone()))
+            .unwrap();
+        registry
+            .register(Box::new(self.observation_dew_point.clone()))
+            .unwrap();
+        registry
+            .register(Box::new(self.observation_wet_bulb_temperature.clone()))
+            .unwrap();
+        registry
+            .register(Box::new(self.observation_apparent_temperature.clone()))
+            .unwrap();
+        registry
+            .register(Box::new(self.observation_illuminance.clone()))
+            .unwrap();
+        registry
+            .register(Box::new(self.observation_irradiance.clone()))
+            .unwrap();
+        registry
+            .register(Box::new(self.observation_uv_index.clone()))
+            .unwrap();
+        registry
+            .register(Box::new(self.observation_rain.clone()))
             .unwrap();
     }
 }
@@ -134,7 +205,7 @@ impl ExportTo for decoder::RapidWind {
     fn export_to(&self, metrics: &ExportedMetrics, _station_params: &StationParams) {
         metrics
             .exporter_messages_received
-            .with_label_values(&["rapid_wind"])
+            .with_label_values(&["instant_wind"])
             .inc();
         metrics.instant_wind.export(&self.wind);
     }
@@ -162,6 +233,17 @@ impl ExportTo for decoder::Observation {
         metrics
             .observation_relative_humidity
             .set(self.relative_humidity);
+        metrics.observation_dew_point.set(self.dew_point());
+        metrics
+            .observation_wet_bulb_temperature
+            .set(self.wet_bulb_temperature());
+        metrics
+            .observation_apparent_temperature
+            .set(self.apparent_temperature());
+        metrics.observation_illuminance.set(self.illuminance);
+        metrics.observation_irradiance.set(self.irradiance);
+        metrics.observation_uv_index.set(self.ultraviolet_index);
+        metrics.observation_rain.observe(self.rain_last_minute);
     }
 }
 

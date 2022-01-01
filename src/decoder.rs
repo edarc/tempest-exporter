@@ -137,7 +137,7 @@ pub struct Observation {
     pub relative_humidity: f64,
     pub illuminance: f64,
     pub ultraviolet_index: f64,
-    pub solar_irradiance: f64,
+    pub irradiance: f64,
     pub rain_last_minute: f64,
     pub precipitation_type: PrecipType,
     pub lightning_average_distance: f64,
@@ -152,12 +152,66 @@ const G: f64 = 9.80665; // Gravitational constant (m s^-2)
 const G_OVER_RD_LAMBDA: f64 = -G / (R_SUB_D * LAMBDA);
 const ZERO_C_KELVIN: f64 = 273.15;
 
+// Opaque constants for Arden-Buck best-fit formula for saturated vapor pressure.
+const ARDEN_BUCK_A: f64 = 6.1121;
+const ARDEN_BUCK_B: f64 = 18.678;
+const ARDEN_BUCK_C: f64 = 257.14;
+const ARDEN_BUCK_D: f64 = 234.5;
+
+// Opaque constants for Stull best-fit formula for wet bulb temperature.
+const STULL_A: f64 = 0.151977;
+const STULL_B: f64 = 8.313659;
+const STULL_C: f64 = -1.676311;
+const STULL_D: f64 = 0.00391838;
+const STULL_E: f64 = 0.023101;
+const STULL_F: f64 = -4.686035;
+
+// Opaque constants for Steadman apparent temperature (radiation-incorporating).
+const STEADMAN_CE: f64 = 0.348;
+const STEADMAN_CWS: f64 = -0.70;
+const STEADMAN_CQ: f64 = 0.70;
+const STEADMAN_OWS: f64 = 10.0;
+const STEADMAN_B: f64 = -4.25;
+
 impl Observation {
     pub fn barometric_pressure(&self, station_elevation: f64) -> f64 {
         let t_kelvin = self.air_temperature + ZERO_C_KELVIN;
         let ratio = (1.0 + (LAMBDA * station_elevation) / (t_kelvin - LAMBDA * station_elevation))
             .powf(-G_OVER_RD_LAMBDA);
         self.station_pressure * ratio
+    }
+
+    pub fn vapor_pressure_saturated(&self) -> f64 {
+        let t = self.air_temperature;
+        ARDEN_BUCK_A * ((ARDEN_BUCK_B - t / ARDEN_BUCK_D) * (t / (ARDEN_BUCK_C + t))).exp()
+    }
+
+    pub fn vapor_pressure_actual(&self) -> f64 {
+        self.vapor_pressure_saturated() * (self.relative_humidity / 100.0)
+    }
+
+    pub fn dew_point(&self) -> f64 {
+        let ln_pa_t_over_a = (self.vapor_pressure_actual() / ARDEN_BUCK_A).ln();
+        ARDEN_BUCK_C * ln_pa_t_over_a / (ARDEN_BUCK_B - ln_pa_t_over_a)
+    }
+
+    pub fn wet_bulb_temperature(&self) -> f64 {
+        let t = self.air_temperature;
+        let rh = self.relative_humidity;
+        t * (STULL_A * (rh + STULL_B).sqrt()).atan() + (t + rh).atan() - (rh + STULL_C).atan()
+            + STULL_D * rh.powf(3.0 / 2.0) * (STULL_E * rh).atan()
+            + STULL_F
+    }
+
+    pub fn apparent_temperature(&self) -> f64 {
+        let ta = self.air_temperature;
+        let e = self.vapor_pressure_actual();
+        let ws = self.wind_avg.speed_magnitude();
+        let q = self.irradiance;
+        ta + STEADMAN_CE * e
+            + STEADMAN_CWS * ws
+            + (STEADMAN_CQ * q) / (ws + STEADMAN_OWS)
+            + STEADMAN_B
     }
 }
 
@@ -180,7 +234,7 @@ impl TryFrom<reader::RawObservation> for Observation {
             relative_humidity: raw.obs[0][8],
             illuminance: raw.obs[0][9],
             ultraviolet_index: raw.obs[0][10],
-            solar_irradiance: raw.obs[0][11],
+            irradiance: raw.obs[0][11],
             rain_last_minute: raw.obs[0][12],
             precipitation_type: match raw.obs[0][13] as i64 {
                 0 => PrecipType::None,
