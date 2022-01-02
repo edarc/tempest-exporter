@@ -7,7 +7,7 @@ mod receiver;
 use std::sync::Arc;
 
 use anyhow::Context;
-use log::{error, info, LevelFilter};
+use log::{error, info};
 use simple_logger::SimpleLogger;
 use structopt::StructOpt;
 use tokio::signal;
@@ -43,6 +43,10 @@ pub struct MqttParams {
 
 #[derive(StructOpt, Debug)]
 struct Opt {
+    /// Log verbosity level
+    #[structopt(long, default_value = "info")]
+    log_level: log::LevelFilter,
+
     /// Port to bind the Prometheus metrics server
     #[structopt(long, default_value = "8080")]
     metrics_port: u16,
@@ -61,7 +65,7 @@ async fn main() -> anyhow::Result<()> {
     let opt = Opt::from_args();
 
     SimpleLogger::new()
-        .with_level(LevelFilter::Info)
+        .with_level(opt.log_level)
         .with_utc_timestamps()
         .init()
         .context("Logging setup failed")
