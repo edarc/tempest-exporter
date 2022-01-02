@@ -10,6 +10,7 @@ use anyhow::Context;
 use log::{error, info, LevelFilter};
 use simple_logger::SimpleLogger;
 use structopt::StructOpt;
+use tokio::signal;
 use tokio::sync::oneshot;
 use tokio_stream::StreamExt;
 use warp::Filter;
@@ -72,7 +73,10 @@ async fn main() -> anyhow::Result<()> {
     let mut dec = decoder::new(rdr);
 
     let exporter = Arc::new(exporter::Exporter::new(opt.station_params.clone()));
-    let publisher = publisher::Publisher::new(opt.station_params.clone(), opt.mqtt_params);
+    let publisher = Arc::new(publisher::Publisher::new(
+        opt.station_params.clone(),
+        opt.mqtt_params,
+    ));
 
     let mut alive = false;
 
@@ -92,11 +96,11 @@ async fn main() -> anyhow::Result<()> {
     let server_filter_chain = warp::path("healthz")
         .map(|| "ok")
         .or(warp::path("metrics").map({
-            let ex = exporter.clone();
+            let exporter = exporter.clone();
             move || {
                 http::Response::builder()
                     .header("content-type", "text/plain; charset=utf-8")
-                    .body(ex.encode())
+                    .body(exporter.encode())
             }
         }));
     let (server_shutdown_tx, server_shutdown_rx) = oneshot::channel();
@@ -104,21 +108,26 @@ async fn main() -> anyhow::Result<()> {
         warp::serve(server_filter_chain)
             .bind_with_graceful_shutdown(([0, 0, 0, 0], opt.metric_port), async move {
                 server_shutdown_rx.await.ok();
+                info!("Web server stopping");
             })
             .1,
     );
 
     let (message_pump_shutdown_tx, mut message_pump_shutdown_rx) = oneshot::channel();
-    let message_pump = tokio::spawn(async move {
-        loop {
-            if let Some(msg) = dec.next().await {
-                exporter.handle_report(&msg);
-                publisher.handle_report(&msg);
-            } else {
-                break;
-            }
-            if message_pump_shutdown_rx.try_recv().is_ok() {
-                break;
+    let message_pump = tokio::spawn({
+        let publisher = publisher.clone();
+        async move {
+            loop {
+                if let Some(msg) = dec.next().await {
+                    exporter.handle_report(&msg);
+                    publisher.handle_report(&msg);
+                } else {
+                    break;
+                }
+                if message_pump_shutdown_rx.try_recv().is_ok() {
+                    info!("Message pump stopping");
+                    break;
+                }
             }
         }
     });
@@ -132,10 +141,18 @@ async fn main() -> anyhow::Result<()> {
             Err(e) => error!("Exporter task panic: {}", e),
             Ok(()) => info!("Exporter task exited"),
         },
+        result = signal::ctrl_c() => match result {
+            Err(e) => error!("Interrupt signal handling failure: {}", e),
+            Ok(()) => info!("Terminating on interrupt signal"),
+        },
     }
 
     server_shutdown_tx.send(()).ok();
     message_pump_shutdown_tx.send(()).ok();
+    publisher.shutdown();
+    info!("Shutdown initiated");
+    tokio::time::sleep(std::time::Duration::from_secs(3)).await;
 
+    info!("Terminating");
     Ok(())
 }

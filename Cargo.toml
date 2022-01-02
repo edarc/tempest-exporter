@@ -29,6 +29,7 @@ warp = "0.3"
 version = "1.15"
 features = [
 	"macros",
-	"rt-multi-thread",
 	"net",
+	"rt-multi-thread",
+	"signal",
 ]

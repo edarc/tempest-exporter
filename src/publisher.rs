@@ -1,6 +1,10 @@
+use std::sync::Mutex;
+
 use log::{debug, error, info};
-use rumqttc::{AsyncClient, MqttOptions, QoS};
-use tokio::sync::mpsc;
+use rumqttc::{
+    AsyncClient, Event as MqEvent, Incoming as MqIncoming, MqttOptions, Outgoing as MqOutgoing, QoS,
+};
+use tokio::sync::{mpsc, oneshot};
 
 use crate::decoder;
 use crate::{MqttParams, StationParams};
@@ -20,11 +24,13 @@ impl MsgSender {
 pub struct Publisher {
     station_params: StationParams,
     sender: MsgSender,
+    shutdown_tx: Mutex<Option<oneshot::Sender<()>>>,
 }
 
 impl Publisher {
     pub fn new(station_params: StationParams, mqtt_params: MqttParams) -> Self {
         let (message_tx, mut message_rx) = mpsc::channel(1024);
+        let (shutdown_tx, shutdown_rx) = oneshot::channel();
 
         let mut mqtt_options = MqttOptions::new(
             "tempest-exporter",
@@ -38,32 +44,58 @@ impl Publisher {
         tokio::spawn(async move {
             loop {
                 match event_loop.poll().await {
+                    Ok(MqEvent::Incoming(MqIncoming::Disconnect))
+                    | Ok(MqEvent::Outgoing(MqOutgoing::Disconnect)) => {
+                        info!("MQTT graceful disconnect");
+                        break;
+                    }
+                    Ok(MqEvent::Incoming(MqIncoming::ConnAck(_))) => {
+                        info!("MQTT connection established")
+                    }
                     Ok(notif) => debug!("MQTT: {:?}", notif),
                     Err(e) => {
                         error!("MQTT: {}", e);
-                        break;
+                        tokio::time::sleep(std::time::Duration::from_secs(2)).await;
+                    }
+                }
+            }
+        });
+        let publisher_task = tokio::spawn({
+            let client = client.clone();
+            async move {
+                loop {
+                    if let Some((topic, retain, payload)) = message_rx.recv().await {
+                        match client
+                            .publish(topic, QoS::AtLeastOnce, retain, payload)
+                            .await
+                        {
+                            Ok(()) => {}
+                            Err(e) => error!("MQTT publish failed: {}", e),
+                        }
                     }
                 }
             }
         });
         tokio::spawn(async move {
-            loop {
-                if let Some((topic, retain, payload)) = message_rx.recv().await {
-                    match client
-                        .publish(topic, QoS::AtLeastOnce, retain, payload)
-                        .await
-                    {
-                        Ok(()) => {}
-                        Err(e) => error!("MQTT publish failed: {}", e),
-                    }
-                }
-            }
+            shutdown_rx.await.ok();
+            info!("MQTT publisher stopping");
+            publisher_task.abort();
+            client.disconnect().await.ok();
         });
 
         Self {
             station_params,
             sender: MsgSender(message_tx),
+            shutdown_tx: Mutex::new(Some(shutdown_tx)),
         }
+    }
+
+    pub fn shutdown(&self) {
+        self.shutdown_tx
+            .lock()
+            .unwrap()
+            .take()
+            .map(|stx| stx.send(()));
     }
 
     pub fn handle_report(&self, msg: &decoder::TempestMsg) {
