@@ -67,6 +67,8 @@ pub struct ExportedMetrics {
     observation_irradiance: Gauge,
     observation_uv_index: Gauge,
     observation_rain: Histogram,
+
+    station_battery_volts: Gauge,
 }
 
 impl ExportedMetrics {
@@ -159,6 +161,12 @@ impl ExportedMetrics {
                     ),
             )
             .unwrap(),
+
+            station_battery_volts: Gauge::with_opts(station(
+                "status_battery_volts",
+                "Station battery voltage (V)",
+            ))
+            .unwrap(),
         }
     }
 
@@ -207,6 +215,10 @@ impl ExportedMetrics {
             .unwrap();
         registry
             .register(Box::new(self.observation_rain.clone()))
+            .unwrap();
+
+        registry
+            .register(Box::new(self.station_battery_volts.clone()))
             .unwrap();
     }
 }
@@ -276,6 +288,8 @@ impl ExportTo for decoder::Observation {
         metrics.observation_irradiance.set(self.irradiance);
         metrics.observation_uv_index.set(self.ultraviolet_index);
         metrics.observation_rain.observe(self.rain_last_minute);
+
+        metrics.station_battery_volts.set(self.battery_volts);
     }
 }
 

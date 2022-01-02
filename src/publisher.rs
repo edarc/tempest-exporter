@@ -251,5 +251,10 @@ impl PublishTo for decoder::Observation {
             true,
             self.rain_last_minute.to_string(),
         );
+        sender.send(
+            "tempest/status/battery_volts",
+            true,
+            self.battery_volts.to_string(),
+        );
     }
 }
