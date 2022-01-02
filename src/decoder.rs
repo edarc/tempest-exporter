@@ -5,6 +5,7 @@ use anyhow::{anyhow, bail};
 use chrono::{DateTime, Duration, NaiveDateTime, Utc};
 use futures_core::stream::Stream;
 use log::warn;
+use serde::Serialize;
 use tokio_stream::StreamExt;
 
 use crate::reader::{self, RawTempestMsg};
@@ -54,7 +55,7 @@ impl From<reader::RawPrecipEvent> for PrecipEvent {
     }
 }
 
-#[derive(Debug)]
+#[derive(Debug, Serialize)]
 pub struct StrikeEvent {
     pub timestamp: DateTime<Utc>,
     pub distance: f64,

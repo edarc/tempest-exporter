@@ -129,8 +129,8 @@ impl Publisher {
     pub fn handle_report(&self, msg: &decoder::TempestMsg) {
         use decoder::TempestMsg as TM;
         match msg {
-            //TM::PrecipEvent(pe) => pe.publish_to(&self.sender, &self.station_params),
-            //TM::StrikeEvent(se) => se.publish_to(&self.sender, &self.station_params),
+            TM::PrecipEvent(pe) => pe.publish_to(&self.sender, &self.station_params),
+            TM::StrikeEvent(se) => se.publish_to(&self.sender, &self.station_params),
             TM::RapidWind(rw) => rw.publish_to(&self.sender, &self.station_params),
             TM::Observation(obs) => obs.publish_to(&self.sender, &self.station_params),
             //TM::DeviceStatus(ds) => ds.publish_to(&self.sender, &self.station_params),
@@ -161,6 +161,22 @@ fn publish_wind(sender: &MsgSender, prefix: &str, wind: &decoder::Wind) {
 
 trait PublishTo {
     fn publish_to(&self, sender: &MsgSender, station_params: &StationParams);
+}
+
+impl PublishTo for decoder::PrecipEvent {
+    fn publish_to(&self, sender: &MsgSender, _station_params: &StationParams) {
+        sender.send("tempest/event/precip", false, self.timestamp.to_rfc3339());
+    }
+}
+
+impl PublishTo for decoder::StrikeEvent {
+    fn publish_to(&self, sender: &MsgSender, _station_params: &StationParams) {
+        sender.send(
+            "tempest/event/lightning",
+            false,
+            serde_json::to_string(&self).unwrap(),
+        );
+    }
 }
 
 impl PublishTo for decoder::RapidWind {
