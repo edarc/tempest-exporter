@@ -45,7 +45,7 @@ pub struct MqttParams {
 struct Opt {
     /// Port to bind the Prometheus metrics server
     #[structopt(long, default_value = "8080")]
-    metric_port: u16,
+    metrics_port: u16,
 
     /// MQTT parameters
     #[structopt(flatten)]
@@ -106,7 +106,7 @@ async fn main() -> anyhow::Result<()> {
     let (server_shutdown_tx, server_shutdown_rx) = oneshot::channel();
     let server = tokio::spawn(
         warp::serve(server_filter_chain)
-            .bind_with_graceful_shutdown(([0, 0, 0, 0], opt.metric_port), async move {
+            .bind_with_graceful_shutdown(([0, 0, 0, 0], opt.metrics_port), async move {
                 server_shutdown_rx.await.ok();
                 info!("Web server stopping");
             })
