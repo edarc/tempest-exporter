@@ -29,16 +29,36 @@ pub struct Publisher {
 
 impl Publisher {
     pub fn new(station_params: StationParams, mqtt_params: MqttParams) -> Self {
-        let (message_tx, mut message_rx) = mpsc::channel(1024);
+        let (message_tx, message_rx) = mpsc::channel(1024);
         let (shutdown_tx, shutdown_rx) = oneshot::channel();
 
+        if mqtt_params.mqtt_broker.is_some() {
+            Self::start_actual(mqtt_params, message_rx, shutdown_rx);
+        } else {
+            Self::start_dummy(message_rx, shutdown_rx);
+        }
+
+        Self {
+            station_params,
+            sender: MsgSender(message_tx),
+            shutdown_tx: Mutex::new(Some(shutdown_tx)),
+        }
+    }
+
+    fn start_actual(
+        mqtt_params: MqttParams,
+        mut message_rx: mpsc::Receiver<Message>,
+        shutdown_rx: oneshot::Receiver<()>,
+    ) {
         let mut mqtt_options = MqttOptions::new(
             "tempest-exporter",
-            mqtt_params.mqtt_broker,
+            mqtt_params.mqtt_broker.unwrap(), // Checked by caller
             mqtt_params.mqtt_port,
         );
         mqtt_options.set_keep_alive(std::time::Duration::from_secs(15));
-        mqtt_options.set_credentials(mqtt_params.mqtt_username, mqtt_params.mqtt_password);
+        if let (Some(user), Some(pass)) = (mqtt_params.mqtt_username, mqtt_params.mqtt_password) {
+            mqtt_options.set_credentials(user, pass);
+        }
 
         let (client, mut event_loop) = AsyncClient::new(mqtt_options, 10);
         tokio::spawn(async move {
@@ -82,12 +102,20 @@ impl Publisher {
             publisher_task.abort();
             client.disconnect().await.ok();
         });
+    }
 
-        Self {
-            station_params,
-            sender: MsgSender(message_tx),
-            shutdown_tx: Mutex::new(Some(shutdown_tx)),
-        }
+    fn start_dummy(mut message_rx: mpsc::Receiver<Message>, shutdown_rx: oneshot::Receiver<()>) {
+        let dummy_sink_task = tokio::spawn(async move {
+            loop {
+                if let Some((topic, _, payload)) = message_rx.recv().await {
+                    debug!("DUMMY: {} -> {}", topic, payload);
+                }
+            }
+        });
+        tokio::spawn(async move {
+            shutdown_rx.await.ok();
+            dummy_sink_task.abort();
+        });
     }
 
     pub fn shutdown(&self) {

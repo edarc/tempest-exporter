@@ -30,15 +30,15 @@ pub struct MqttParams {
 
     /// Address of MQTT broker
     #[structopt(long)]
-    mqtt_broker: String,
+    mqtt_broker: Option<String>,
 
     /// MQTT username
     #[structopt(long)]
-    mqtt_username: String,
+    mqtt_username: Option<String>,
 
     /// MQTT password
     #[structopt(long)]
-    mqtt_password: String,
+    mqtt_password: Option<String>,
 }
 
 #[derive(StructOpt, Debug)]
