@@ -3,7 +3,8 @@ mod wind_metrics;
 use std::time::Duration;
 
 use prometheus::{
-    Encoder, Gauge, Histogram, HistogramOpts, IntCounterVec, IntGauge, Opts, Registry, TextEncoder,
+    Encoder, Gauge, Histogram, HistogramOpts, IntCounterVec, IntGauge, IntGaugeVec, Opts, Registry,
+    TextEncoder,
 };
 
 use crate::decoder;
@@ -74,6 +75,7 @@ pub struct ExportedMetrics {
     observation_rain: Histogram,
 
     station_battery_volts: Gauge,
+    station_sensor_status: IntGaugeVec,
 }
 
 impl ExportedMetrics {
@@ -198,6 +200,11 @@ impl ExportedMetrics {
                 "Station battery voltage (V)",
             ))
             .unwrap(),
+            station_sensor_status: IntGaugeVec::new(
+                station("status_sensors", "Station sensor status flags (boolean)"),
+                &["condition"],
+            )
+            .unwrap(),
         }
     }
 
@@ -240,6 +247,9 @@ impl ExportedMetrics {
 
         registry
             .register(Box::new(self.station_battery_volts.clone()))
+            .unwrap();
+        registry
+            .register(Box::new(self.station_sensor_status.clone()))
             .unwrap();
     }
 }
@@ -366,6 +376,29 @@ impl ExportTo for decoder::DeviceStatus {
             .exporter_messages_received
             .with_label_values(&["device_status"])
             .inc();
+        let sss = &metrics.station_sensor_status;
+        sss.with_label_values(&["lightning_failure"])
+            .set(self.sensor_status.lightning_failure as i64);
+        sss.with_label_values(&["lightning_noise"])
+            .set(self.sensor_status.lightning_noise as i64);
+        sss.with_label_values(&["lightning_disturber"])
+            .set(self.sensor_status.lightning_disturber as i64);
+        sss.with_label_values(&["pressure_failed"])
+            .set(self.sensor_status.pressure_failed as i64);
+        sss.with_label_values(&["temperature_failed"])
+            .set(self.sensor_status.temperature_failed as i64);
+        sss.with_label_values(&["humidity_failed"])
+            .set(self.sensor_status.humidity_failed as i64);
+        sss.with_label_values(&["wind_failed"])
+            .set(self.sensor_status.wind_failed as i64);
+        sss.with_label_values(&["precip_failed"])
+            .set(self.sensor_status.precip_failed as i64);
+        sss.with_label_values(&["irradiance_failed"])
+            .set(self.sensor_status.irradiance_failed as i64);
+        sss.with_label_values(&["power_booster_depleted"])
+            .set(self.sensor_status.power_booster_depleted as i64);
+        sss.with_label_values(&["power_booster_shore_power"])
+            .set(self.sensor_status.power_booster_shore_power as i64);
     }
 }
 
