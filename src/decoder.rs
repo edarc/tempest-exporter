@@ -243,47 +243,71 @@ impl Observation {
 impl TryFrom<reader::RawObservation> for Observation {
     type Error = (reader::RawObservation, anyhow::Error);
     fn try_from(raw: reader::RawObservation) -> Result<Self, Self::Error> {
-        let timestamp =
-            DateTime::from_utc(NaiveDateTime::from_timestamp(raw.obs[0][0] as i64, 0), Utc);
-        let wind = {
-            let wind_dir = raw.obs[0][4];
-            WindObservation {
-                lull: Wind::new(raw.obs[0][1], wind_dir),
-                avg: Wind::new(raw.obs[0][2], wind_dir),
-                gust: Wind::new(raw.obs[0][3], wind_dir),
-                interval: Duration::seconds(raw.obs[0][5] as i64),
+        let timestamp = match raw.obs[0][0] {
+            Some(unix_sec) => {
+                DateTime::from_utc(NaiveDateTime::from_timestamp(unix_sec as i64, 0), Utc)
             }
+            None => return Err((raw, anyhow!("Missing observation timestamp"))),
         };
-        let solar = SolarObservation {
-            illuminance: raw.obs[0][9],
-            ultraviolet_index: raw.obs[0][10],
-            irradiance: raw.obs[0][11],
+
+        let wind: Option<WindObservation> = (|| {
+            let wind_dir = raw.obs[0][4]?;
+            Some(WindObservation {
+                lull: Wind::new(raw.obs[0][1]?, wind_dir),
+                avg: Wind::new(raw.obs[0][2]?, wind_dir),
+                gust: Wind::new(raw.obs[0][3]?, wind_dir),
+                interval: Duration::seconds(raw.obs[0][5]? as i64),
+            })
+        })();
+
+        let solar: Option<SolarObservation> = (|| {
+            Some(SolarObservation {
+                illuminance: raw.obs[0][9]?,
+                ultraviolet_index: raw.obs[0][10]?,
+                irradiance: raw.obs[0][11]?,
+            })
+        })();
+
+        let precip_obs: Option<(f64, i64)> = (|| Some((raw.obs[0][12]?, raw.obs[0][13]? as i64)))();
+        let precip = if let Some((qty, kind_raw)) = precip_obs {
+            Some(PrecipObservation {
+                quantity_last_minute: qty,
+                kind: match kind_raw {
+                    0 => PrecipKind::None,
+                    1 => PrecipKind::Rain,
+                    2 => PrecipKind::Hail,
+                    3 => PrecipKind::RainHail,
+                    other => return Err((raw, anyhow!("Unrecognized precip type {}", other))),
+                },
+            })
+        } else {
+            None
         };
-        let precip = PrecipObservation {
-            quantity_last_minute: raw.obs[0][12],
-            kind: match raw.obs[0][13] as i64 {
-                0 => PrecipKind::None,
-                1 => PrecipKind::Rain,
-                2 => PrecipKind::Hail,
-                3 => PrecipKind::RainHail,
-                other => return Err((raw, anyhow!("Unrecognized precip type {}", other))),
-            },
-        };
-        let lightning = LightningObservation {
-            average_distance: raw.obs[0][14],
-            count: raw.obs[0][15] as i64,
-        };
+
+        let lightning = (|| {
+            Some(LightningObservation {
+                average_distance: raw.obs[0][14]?,
+                count: raw.obs[0][15]? as i64,
+            })
+        })();
+
         Ok(Self {
             timestamp,
-            wind: Some(wind),
-            station_pressure: Some(raw.obs[0][6]),
-            air_temperature: Some(raw.obs[0][7]),
-            relative_humidity: Some(raw.obs[0][8]),
-            solar: Some(solar),
-            precip: Some(precip),
-            lightning: Some(lightning),
-            battery_volts: raw.obs[0][16],
-            report_interval: Duration::minutes(raw.obs[0][17] as i64),
+            wind,
+            station_pressure: raw.obs[0][6],
+            air_temperature: raw.obs[0][7],
+            relative_humidity: raw.obs[0][8],
+            solar,
+            precip,
+            lightning,
+            battery_volts: match raw.obs[0][16] {
+                Some(volts) => volts,
+                None => return Err((raw, anyhow!("Missing battery voltage"))),
+            },
+            report_interval: match raw.obs[0][17] {
+                Some(interval) => Duration::minutes(interval as i64),
+                None => return Err((raw, anyhow!("Missing report interval"))),
+            },
         })
     }
 }

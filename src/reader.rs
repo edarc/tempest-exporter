@@ -45,7 +45,7 @@ pub struct RawRapidWind {
 pub struct RawObservation {
     pub serial_number: String,
     pub hub_sn: String,
-    pub obs: [[f64; 18]; 1],
+    pub obs: [[Option<f64>; 18]; 1],
     pub firmware_revision: i32,
 }
 
