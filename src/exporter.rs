@@ -1,6 +1,7 @@
 mod wind_metrics;
 
-use chrono::Duration;
+use std::time::Duration;
+
 use prometheus::{
     Encoder, Gauge, Histogram, HistogramOpts, IntCounterVec, IntGauge, Opts, Registry, TextEncoder,
 };
@@ -9,6 +10,9 @@ use crate::decoder;
 use crate::perishable::Perishable;
 use crate::StationParams;
 use wind_metrics::WindMetrics;
+
+const INSTANT_WIND_VALID: Duration = Duration::from_secs(15);
+const OBS_VALID: Duration = Duration::from_secs(3 * 60);
 
 pub struct Exporter {
     metrics: ExportedMetrics,
@@ -270,14 +274,13 @@ impl ExportTo for decoder::RapidWind {
             .inc();
         metrics
             .instant_wind
-            .freshen(Duration::seconds(15))
+            .freshen(INSTANT_WIND_VALID)
             .export(&self.wind);
     }
 }
 
 impl ExportTo for decoder::Observation {
     fn export_to(&self, metrics: &ExportedMetrics, station_params: &StationParams) {
-        let valid_time = Duration::minutes(3);
         metrics
             .exporter_messages_received
             .with_label_values(&["observation"])
@@ -288,63 +291,63 @@ impl ExportTo for decoder::Observation {
         if let Some(wind) = &self.wind {
             metrics
                 .observation_wind_lull
-                .freshen(valid_time)
+                .freshen(OBS_VALID)
                 .export(&wind.lull);
             metrics
                 .observation_wind_avg
-                .freshen(valid_time)
+                .freshen(OBS_VALID)
                 .export(&wind.avg);
             metrics
                 .observation_wind_gust
-                .freshen(valid_time)
+                .freshen(OBS_VALID)
                 .export(&wind.gust);
         }
         self.station_pressure.map(|v| {
             metrics
                 .observation_station_pressure
-                .freshen(valid_time)
+                .freshen(OBS_VALID)
                 .set(v)
         });
         self.barometric_pressure(station_params.elevation).map(|v| {
             metrics
                 .observation_barometric_pressure
-                .freshen(valid_time)
+                .freshen(OBS_VALID)
                 .set(v)
         });
         self.air_temperature
-            .map(|v| metrics.observation_temperature.freshen(valid_time).set(v));
+            .map(|v| metrics.observation_temperature.freshen(OBS_VALID).set(v));
         self.relative_humidity.map(|v| {
             metrics
                 .observation_relative_humidity
-                .freshen(valid_time)
+                .freshen(OBS_VALID)
                 .set(v)
         });
         self.dew_point()
-            .map(|v| metrics.observation_dew_point.freshen(valid_time).set(v));
+            .map(|v| metrics.observation_dew_point.freshen(OBS_VALID).set(v));
         self.wet_bulb_temperature().map(|v| {
             metrics
                 .observation_wet_bulb_temperature
-                .freshen(valid_time)
+                .freshen(OBS_VALID)
                 .set(v)
         });
         self.apparent_temperature().map(|v| {
             metrics
                 .observation_apparent_temperature
-                .freshen(valid_time)
+                .freshen(OBS_VALID)
                 .set(v)
         });
         if let Some(solar) = &self.solar {
             metrics
                 .observation_illuminance
-                .freshen(valid_time)
+                .freshen(OBS_VALID)
                 .set(solar.illuminance);
             metrics
                 .observation_irradiance
-                .freshen(valid_time)
+                .freshen(OBS_VALID)
                 .set(solar.irradiance);
             metrics
                 .observation_uv_index
-                .freshen(valid_time)
+                .freshen(OBS_VALID)
                 .set(solar.ultraviolet_index);
         }
         if let Some(precip) = &self.precip {
