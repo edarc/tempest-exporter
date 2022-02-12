@@ -119,7 +119,7 @@ impl From<reader::RawRapidWind> for RapidWind {
 }
 
 #[derive(Debug)]
-pub enum PrecipType {
+pub enum PrecipKind {
     None,
     Rain,
     Hail,
@@ -127,22 +127,42 @@ pub enum PrecipType {
 }
 
 #[derive(Debug)]
-pub struct Observation {
-    pub timestamp: DateTime<Utc>,
-    pub wind_lull: Wind,
-    pub wind_avg: Wind,
-    pub wind_gust: Wind,
-    pub wind_interval: Duration,
-    pub station_pressure: f64,
-    pub air_temperature: f64,
-    pub relative_humidity: f64,
+pub struct WindObservation {
+    pub lull: Wind,
+    pub avg: Wind,
+    pub gust: Wind,
+    pub interval: Duration,
+}
+
+#[derive(Debug)]
+pub struct SolarObservation {
     pub illuminance: f64,
     pub ultraviolet_index: f64,
     pub irradiance: f64,
-    pub rain_last_minute: f64,
-    pub precipitation_type: PrecipType,
-    pub lightning_average_distance: f64,
-    pub lightning_count: i64,
+}
+
+#[derive(Debug)]
+pub struct PrecipObservation {
+    pub quantity_last_minute: f64,
+    pub kind: PrecipKind,
+}
+
+#[derive(Debug)]
+pub struct LightningObservation {
+    pub average_distance: f64,
+    pub count: i64,
+}
+
+#[derive(Debug)]
+pub struct Observation {
+    pub timestamp: DateTime<Utc>,
+    pub wind: Option<WindObservation>,
+    pub station_pressure: Option<f64>,
+    pub air_temperature: Option<f64>,
+    pub relative_humidity: Option<f64>,
+    pub solar: Option<SolarObservation>,
+    pub precip: Option<PrecipObservation>,
+    pub lightning: Option<LightningObservation>,
     pub battery_volts: f64,
     pub report_interval: Duration,
 }
@@ -175,77 +195,93 @@ const STEADMAN_OWS: f64 = 10.0;
 const STEADMAN_B: f64 = -4.25;
 
 impl Observation {
-    pub fn barometric_pressure(&self, station_elevation: f64) -> f64 {
-        let t_kelvin = self.air_temperature + ZERO_C_KELVIN;
+    pub fn barometric_pressure(&self, station_elevation: f64) -> Option<f64> {
+        let t_kelvin = self.air_temperature? + ZERO_C_KELVIN;
         let ratio = (1.0 + (LAMBDA * station_elevation) / (t_kelvin - LAMBDA * station_elevation))
             .powf(-G_OVER_RD_LAMBDA);
-        self.station_pressure * ratio
+        Some(self.station_pressure? * ratio)
     }
 
-    pub fn vapor_pressure_saturated(&self) -> f64 {
-        let t = self.air_temperature;
-        ARDEN_BUCK_A * ((ARDEN_BUCK_B - t / ARDEN_BUCK_D) * (t / (ARDEN_BUCK_C + t))).exp()
+    pub fn vapor_pressure_saturated(&self) -> Option<f64> {
+        let t = self.air_temperature?;
+        Some(ARDEN_BUCK_A * ((ARDEN_BUCK_B - t / ARDEN_BUCK_D) * (t / (ARDEN_BUCK_C + t))).exp())
     }
 
-    pub fn vapor_pressure_actual(&self) -> f64 {
-        self.vapor_pressure_saturated() * (self.relative_humidity / 100.0)
+    pub fn vapor_pressure_actual(&self) -> Option<f64> {
+        Some(self.vapor_pressure_saturated()? * (self.relative_humidity? / 100.0))
     }
 
-    pub fn dew_point(&self) -> f64 {
-        let ln_pa_t_over_a = (self.vapor_pressure_actual() / ARDEN_BUCK_A).ln();
-        ARDEN_BUCK_C * ln_pa_t_over_a / (ARDEN_BUCK_B - ln_pa_t_over_a)
+    pub fn dew_point(&self) -> Option<f64> {
+        let ln_pa_t_over_a = (self.vapor_pressure_actual()? / ARDEN_BUCK_A).ln();
+        Some(ARDEN_BUCK_C * ln_pa_t_over_a / (ARDEN_BUCK_B - ln_pa_t_over_a))
     }
 
-    pub fn wet_bulb_temperature(&self) -> f64 {
-        let t = self.air_temperature;
-        let rh = self.relative_humidity;
-        t * (STULL_A * (rh + STULL_B).sqrt()).atan() + (t + rh).atan() - (rh + STULL_C).atan()
-            + STULL_D * rh.powf(3.0 / 2.0) * (STULL_E * rh).atan()
-            + STULL_F
+    pub fn wet_bulb_temperature(&self) -> Option<f64> {
+        let t = self.air_temperature?;
+        let rh = self.relative_humidity?;
+        Some(
+            t * (STULL_A * (rh + STULL_B).sqrt()).atan() + (t + rh).atan() - (rh + STULL_C).atan()
+                + STULL_D * rh.powf(3.0 / 2.0) * (STULL_E * rh).atan()
+                + STULL_F,
+        )
     }
 
-    pub fn apparent_temperature(&self) -> f64 {
-        let ta = self.air_temperature;
-        let e = self.vapor_pressure_actual();
-        let ws = self.wind_avg.speed_magnitude();
-        let q = self.irradiance;
-        ta + STEADMAN_CE * e
-            + STEADMAN_CWS * ws
-            + (STEADMAN_CQ * q) / (ws + STEADMAN_OWS)
-            + STEADMAN_B
+    pub fn apparent_temperature(&self) -> Option<f64> {
+        let ta = self.air_temperature?;
+        let e = self.vapor_pressure_actual()?;
+        let ws = self.wind.as_ref()?.avg.speed_magnitude();
+        let q = self.solar.as_ref()?.irradiance;
+        Some(
+            ta + STEADMAN_CE * e
+                + STEADMAN_CWS * ws
+                + (STEADMAN_CQ * q) / (ws + STEADMAN_OWS)
+                + STEADMAN_B,
+        )
     }
 }
 
 impl TryFrom<reader::RawObservation> for Observation {
     type Error = (reader::RawObservation, anyhow::Error);
     fn try_from(raw: reader::RawObservation) -> Result<Self, Self::Error> {
-        let timestamp = raw.obs[0][0] as i64;
-        let wind_lull = raw.obs[0][1];
-        let wind_avg = raw.obs[0][2];
-        let wind_gust = raw.obs[0][3];
-        let wind_dir = raw.obs[0][4];
-        Ok(Self {
-            timestamp: DateTime::from_utc(NaiveDateTime::from_timestamp(timestamp, 0), Utc),
-            wind_lull: Wind::new(wind_lull, wind_dir),
-            wind_avg: Wind::new(wind_avg, wind_dir),
-            wind_gust: Wind::new(wind_gust, wind_dir),
-            wind_interval: Duration::seconds(raw.obs[0][5] as i64),
-            station_pressure: raw.obs[0][6],
-            air_temperature: raw.obs[0][7],
-            relative_humidity: raw.obs[0][8],
+        let timestamp =
+            DateTime::from_utc(NaiveDateTime::from_timestamp(raw.obs[0][0] as i64, 0), Utc);
+        let wind = {
+            let wind_dir = raw.obs[0][4];
+            WindObservation {
+                lull: Wind::new(raw.obs[0][1], wind_dir),
+                avg: Wind::new(raw.obs[0][2], wind_dir),
+                gust: Wind::new(raw.obs[0][3], wind_dir),
+                interval: Duration::seconds(raw.obs[0][5] as i64),
+            }
+        };
+        let solar = SolarObservation {
             illuminance: raw.obs[0][9],
             ultraviolet_index: raw.obs[0][10],
             irradiance: raw.obs[0][11],
-            rain_last_minute: raw.obs[0][12],
-            precipitation_type: match raw.obs[0][13] as i64 {
-                0 => PrecipType::None,
-                1 => PrecipType::Rain,
-                2 => PrecipType::Hail,
-                3 => PrecipType::RainHail,
+        };
+        let precip = PrecipObservation {
+            quantity_last_minute: raw.obs[0][12],
+            kind: match raw.obs[0][13] as i64 {
+                0 => PrecipKind::None,
+                1 => PrecipKind::Rain,
+                2 => PrecipKind::Hail,
+                3 => PrecipKind::RainHail,
                 other => return Err((raw, anyhow!("Unrecognized precip type {}", other))),
             },
-            lightning_average_distance: raw.obs[0][14],
-            lightning_count: raw.obs[0][15] as i64,
+        };
+        let lightning = LightningObservation {
+            average_distance: raw.obs[0][14],
+            count: raw.obs[0][15] as i64,
+        };
+        Ok(Self {
+            timestamp,
+            wind: Some(wind),
+            station_pressure: Some(raw.obs[0][6]),
+            air_temperature: Some(raw.obs[0][7]),
+            relative_humidity: Some(raw.obs[0][8]),
+            solar: Some(solar),
+            precip: Some(precip),
+            lightning: Some(lightning),
             battery_volts: raw.obs[0][16],
             report_interval: Duration::minutes(raw.obs[0][17] as i64),
         })

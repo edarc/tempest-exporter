@@ -192,65 +192,84 @@ impl PublishTo for decoder::Observation {
             true,
             self.timestamp.to_rfc3339(),
         );
-        publish_wind(sender, "tempest/observation/wind/lull", &self.wind_lull);
-        publish_wind(sender, "tempest/observation/wind/avg", &self.wind_avg);
-        publish_wind(sender, "tempest/observation/wind/gust", &self.wind_gust);
-        sender.send(
-            "tempest/observation/pressure/station_hpa",
-            true,
-            self.station_pressure.to_string(),
-        );
-        sender.send(
-            "tempest/observation/pressure/barometric_hpa",
-            true,
-            self.barometric_pressure(station_params.elevation)
-                .to_string(),
-        );
-        sender.send(
-            "tempest/observation/thermal/temperature_deg_c",
-            true,
-            self.air_temperature.to_string(),
-        );
-        sender.send(
-            "tempest/observation/thermal/relative_humidity_pct",
-            true,
-            self.relative_humidity.to_string(),
-        );
-        sender.send(
-            "tempest/observation/thermal/dew_point_deg_c",
-            true,
-            self.dew_point().to_string(),
-        );
-        sender.send(
-            "tempest/observation/thermal/wet_bulb_temperature_deg_c",
-            true,
-            self.wet_bulb_temperature().to_string(),
-        );
-        sender.send(
-            "tempest/observation/thermal/apparent_temperature_deg_c",
-            true,
-            self.apparent_temperature().to_string(),
-        );
-        sender.send(
-            "tempest/observation/solar/illuminance_lux",
-            true,
-            self.illuminance.to_string(),
-        );
-        sender.send(
-            "tempest/observation/solar/irradiance_w_per_m2",
-            true,
-            self.irradiance.to_string(),
-        );
-        sender.send(
-            "tempest/observation/solar/uv_index",
-            true,
-            self.ultraviolet_index.to_string(),
-        );
-        sender.send(
-            "tempest/observation/precip/previous_minute_rain_mm",
-            true,
-            self.rain_last_minute.to_string(),
-        );
+        if let Some(wind) = &self.wind {
+            publish_wind(sender, "tempest/observation/wind/lull", &wind.lull);
+            publish_wind(sender, "tempest/observation/wind/avg", &wind.avg);
+            publish_wind(sender, "tempest/observation/wind/gust", &wind.gust);
+        }
+        self.station_pressure.map(|v| {
+            sender.send(
+                "tempest/observation/pressure/station_hpa",
+                true,
+                v.to_string(),
+            )
+        });
+        self.barometric_pressure(station_params.elevation).map(|v| {
+            sender.send(
+                "tempest/observation/pressure/barometric_hpa",
+                true,
+                v.to_string(),
+            )
+        });
+        self.air_temperature.map(|v| {
+            sender.send(
+                "tempest/observation/thermal/temperature_deg_c",
+                true,
+                v.to_string(),
+            )
+        });
+        self.relative_humidity.map(|v| {
+            sender.send(
+                "tempest/observation/thermal/relative_humidity_pct",
+                true,
+                v.to_string(),
+            )
+        });
+        self.dew_point().map(|v| {
+            sender.send(
+                "tempest/observation/thermal/dew_point_deg_c",
+                true,
+                v.to_string(),
+            )
+        });
+        self.wet_bulb_temperature().map(|v| {
+            sender.send(
+                "tempest/observation/thermal/wet_bulb_temperature_deg_c",
+                true,
+                v.to_string(),
+            )
+        });
+        self.apparent_temperature().map(|v| {
+            sender.send(
+                "tempest/observation/thermal/apparent_temperature_deg_c",
+                true,
+                v.to_string(),
+            )
+        });
+        if let Some(solar) = &self.solar {
+            sender.send(
+                "tempest/observation/solar/illuminance_lux",
+                true,
+                solar.illuminance.to_string(),
+            );
+            sender.send(
+                "tempest/observation/solar/irradiance_w_per_m2",
+                true,
+                solar.irradiance.to_string(),
+            );
+            sender.send(
+                "tempest/observation/solar/uv_index",
+                true,
+                solar.ultraviolet_index.to_string(),
+            );
+        }
+        if let Some(precip) = &self.precip {
+            sender.send(
+                "tempest/observation/precip/previous_minute_rain_mm",
+                true,
+                precip.quantity_last_minute.to_string(),
+            );
+        }
         sender.send(
             "tempest/status/battery_volts",
             true,

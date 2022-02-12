@@ -264,30 +264,35 @@ impl ExportTo for decoder::Observation {
         metrics
             .observation_timestamp
             .set(self.timestamp.timestamp());
-        metrics.observation_wind_lull.export(&self.wind_lull);
-        metrics.observation_wind_avg.export(&self.wind_avg);
-        metrics.observation_wind_gust.export(&self.wind_gust);
-        metrics
-            .observation_station_pressure
-            .set(self.station_pressure);
-        metrics
-            .observation_barometric_pressure
-            .set(self.barometric_pressure(station_params.elevation));
-        metrics.observation_temperature.set(self.air_temperature);
-        metrics
-            .observation_relative_humidity
-            .set(self.relative_humidity);
-        metrics.observation_dew_point.set(self.dew_point());
-        metrics
-            .observation_wet_bulb_temperature
-            .set(self.wet_bulb_temperature());
-        metrics
-            .observation_apparent_temperature
-            .set(self.apparent_temperature());
-        metrics.observation_illuminance.set(self.illuminance);
-        metrics.observation_irradiance.set(self.irradiance);
-        metrics.observation_uv_index.set(self.ultraviolet_index);
-        metrics.observation_rain.observe(self.rain_last_minute);
+        if let Some(wind) = &self.wind {
+            metrics.observation_wind_lull.export(&wind.lull);
+            metrics.observation_wind_avg.export(&wind.avg);
+            metrics.observation_wind_gust.export(&wind.gust);
+        }
+        self.station_pressure
+            .map(|v| metrics.observation_station_pressure.set(v));
+        self.barometric_pressure(station_params.elevation)
+            .map(|v| metrics.observation_barometric_pressure.set(v));
+        self.air_temperature
+            .map(|v| metrics.observation_temperature.set(v));
+        self.relative_humidity
+            .map(|v| metrics.observation_relative_humidity.set(v));
+        self.dew_point()
+            .map(|v| metrics.observation_dew_point.set(v));
+        self.wet_bulb_temperature()
+            .map(|v| metrics.observation_wet_bulb_temperature.set(v));
+        self.apparent_temperature()
+            .map(|v| metrics.observation_apparent_temperature.set(v));
+        if let Some(solar) = &self.solar {
+            metrics.observation_illuminance.set(solar.illuminance);
+            metrics.observation_irradiance.set(solar.irradiance);
+            metrics.observation_uv_index.set(solar.ultraviolet_index);
+        }
+        if let Some(precip) = &self.precip {
+            metrics
+                .observation_rain
+                .observe(precip.quantity_last_minute);
+        }
 
         metrics.station_battery_volts.set(self.battery_volts);
     }
