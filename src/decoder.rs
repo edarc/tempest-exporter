@@ -196,7 +196,7 @@ const STEADMAN_B: f64 = -4.25;
 
 impl Observation {
     pub fn barometric_pressure(&self, station_elevation: f64) -> Option<f64> {
-        let t_kelvin = self.air_temperature? + ZERO_C_KELVIN;
+        let t_kelvin = self.air_temperature.unwrap_or(0.0) + ZERO_C_KELVIN;
         let ratio = (1.0 + (LAMBDA * station_elevation) / (t_kelvin - LAMBDA * station_elevation))
             .powf(-G_OVER_RD_LAMBDA);
         Some(self.station_pressure? * ratio)
