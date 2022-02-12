@@ -10,26 +10,25 @@ use wind_metrics::WindMetrics;
 
 pub struct Exporter {
     metrics: ExportedMetrics,
-    registry: Registry,
     station_params: StationParams,
 }
 
 impl Exporter {
     pub fn new(station_params: StationParams) -> Self {
         let metrics = ExportedMetrics::new();
-        let mut registry = Registry::new();
-        metrics.register_all(&mut registry);
         Self {
             metrics,
-            registry,
             station_params,
         }
     }
 
     pub fn encode(&self) -> Vec<u8> {
+        let mut registry = Registry::new();
+        self.metrics.register_all(&mut registry);
+        let metric_families = registry.gather();
+
         let mut buffer = vec![];
         let encoder = TextEncoder::new();
-        let metric_families = self.registry.gather();
         encoder.encode(&metric_families, &mut buffer).unwrap();
         buffer
     }
