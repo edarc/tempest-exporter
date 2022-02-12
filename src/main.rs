@@ -1,12 +1,13 @@
 mod decoder;
 mod exporter;
+mod perishable;
 mod publisher;
 mod reader;
 mod receiver;
 
 use std::sync::Arc;
 
-use anyhow::Context;
+use anyhow::{bail, Context};
 use log::{error, info};
 use simple_logger::SimpleLogger;
 use structopt::StructOpt;
@@ -82,19 +83,13 @@ async fn main() -> anyhow::Result<()> {
         opt.mqtt_params,
     ));
 
-    let mut alive = false;
-
-    while let Some(msg) = dec.next().await {
-        exporter.handle_report(&msg);
-        publisher.handle_report(&msg);
-        if !alive {
-            alive = true;
+    match dec.next().await {
+        Some(msg) => {
+            exporter.handle_report(&msg);
+            publisher.handle_report(&msg);
             info!("Tempest API is alive");
         }
-        if let decoder::TempestMsg::Observation(_) = msg {
-            info!("First observation received; going online");
-            break;
-        }
+        None => bail!("Decoder stream never returned anything"),
     }
 
     let server_filter_chain = warp::path("healthz")

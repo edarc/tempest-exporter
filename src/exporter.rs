@@ -1,10 +1,12 @@
 mod wind_metrics;
 
+use chrono::Duration;
 use prometheus::{
     Encoder, Gauge, Histogram, HistogramOpts, IntCounterVec, IntGauge, Opts, Registry, TextEncoder,
 };
 
 use crate::decoder;
+use crate::perishable::Perishable;
 use crate::StationParams;
 use wind_metrics::WindMetrics;
 
@@ -49,22 +51,22 @@ impl Exporter {
 pub struct ExportedMetrics {
     exporter_messages_received: IntCounterVec,
 
-    instant_wind: WindMetrics,
+    instant_wind: Perishable<WindMetrics>,
 
     observation_timestamp: IntGauge,
-    observation_wind_lull: WindMetrics,
-    observation_wind_avg: WindMetrics,
-    observation_wind_gust: WindMetrics,
-    observation_station_pressure: Gauge,
-    observation_barometric_pressure: Gauge,
-    observation_temperature: Gauge,
-    observation_relative_humidity: Gauge,
-    observation_dew_point: Gauge,
-    observation_wet_bulb_temperature: Gauge,
-    observation_apparent_temperature: Gauge,
-    observation_illuminance: Gauge,
-    observation_irradiance: Gauge,
-    observation_uv_index: Gauge,
+    observation_wind_lull: Perishable<WindMetrics>,
+    observation_wind_avg: Perishable<WindMetrics>,
+    observation_wind_gust: Perishable<WindMetrics>,
+    observation_station_pressure: Perishable<Gauge>,
+    observation_barometric_pressure: Perishable<Gauge>,
+    observation_temperature: Perishable<Gauge>,
+    observation_relative_humidity: Perishable<Gauge>,
+    observation_dew_point: Perishable<Gauge>,
+    observation_wet_bulb_temperature: Perishable<Gauge>,
+    observation_apparent_temperature: Perishable<Gauge>,
+    observation_illuminance: Perishable<Gauge>,
+    observation_irradiance: Perishable<Gauge>,
+    observation_uv_index: Perishable<Gauge>,
     observation_rain: Histogram,
 
     station_battery_volts: Gauge,
@@ -89,66 +91,92 @@ impl ExportedMetrics {
             )
             .unwrap(),
 
-            instant_wind: WindMetrics::new("instant_wind", "Instantaneous wind"),
+            instant_wind: Perishable::new(WindMetrics::new("instant_wind", "Instantaneous wind")),
 
             observation_timestamp: IntGauge::with_opts(station(
                 "observation_timestamp_unix_sec",
                 "Current observation Unix timestamp (s)",
             ))
             .unwrap(),
-            observation_wind_lull: WindMetrics::new("observation_wind_lull", "3-minute wind lull"),
-            observation_wind_avg: WindMetrics::new("observation_wind_avg", "3-minute wind average"),
-            observation_wind_gust: WindMetrics::new("observation_wind_gust", "3-minute wind gust"),
-            observation_station_pressure: Gauge::with_opts(station(
-                "observation_station_pressure_hpa",
-                "Current station pressure (hPa)",
-            ))
-            .unwrap(),
-            observation_barometric_pressure: Gauge::with_opts(station(
-                "observation_barometric_pressure_hpa",
-                "Current barometric pressure, mean sea level (hPa)",
-            ))
-            .unwrap(),
-            observation_temperature: Gauge::with_opts(station(
-                "observation_temperature_deg_c",
-                "Current temperature (°C)",
-            ))
-            .unwrap(),
-            observation_relative_humidity: Gauge::with_opts(station(
-                "observation_relative_humidity_pct",
-                "Current relative humidity (%)",
-            ))
-            .unwrap(),
-            observation_dew_point: Gauge::with_opts(station(
-                "observation_dew_point_deg_c",
-                "Current dew point (°C)",
-            ))
-            .unwrap(),
-            observation_wet_bulb_temperature: Gauge::with_opts(station(
-                "observation_wet_bulb_temperature_deg_c",
-                "Current wet bulb temperature (°C)",
-            ))
-            .unwrap(),
-            observation_apparent_temperature: Gauge::with_opts(station(
-                "observation_apparent_temperature_deg_c",
-                "Current apparent temperature, Steadman formula (°C)",
-            ))
-            .unwrap(),
-            observation_illuminance: Gauge::with_opts(station(
-                "observation_illuminance_lux",
-                "Current photometric illuminance (lux)",
-            ))
-            .unwrap(),
-            observation_irradiance: Gauge::with_opts(station(
-                "observation_irradiance_w_per_m2",
-                "Current radiometric irradiance (W·m^-2)",
-            ))
-            .unwrap(),
-            observation_uv_index: Gauge::with_opts(station(
-                "observation_uv_index",
-                "Current ultraviolet index",
-            ))
-            .unwrap(),
+            observation_wind_lull: Perishable::new(WindMetrics::new(
+                "observation_wind_lull",
+                "3-minute wind lull",
+            )),
+            observation_wind_avg: Perishable::new(WindMetrics::new(
+                "observation_wind_avg",
+                "3-minute wind average",
+            )),
+            observation_wind_gust: Perishable::new(WindMetrics::new(
+                "observation_wind_gust",
+                "3-minute wind gust",
+            )),
+            observation_station_pressure: Perishable::new(
+                Gauge::with_opts(station(
+                    "observation_station_pressure_hpa",
+                    "Current station pressure (hPa)",
+                ))
+                .unwrap(),
+            ),
+            observation_barometric_pressure: Perishable::new(
+                Gauge::with_opts(station(
+                    "observation_barometric_pressure_hpa",
+                    "Current barometric pressure, mean sea level (hPa)",
+                ))
+                .unwrap(),
+            ),
+            observation_temperature: Perishable::new(
+                Gauge::with_opts(station(
+                    "observation_temperature_deg_c",
+                    "Current temperature (°C)",
+                ))
+                .unwrap(),
+            ),
+            observation_relative_humidity: Perishable::new(
+                Gauge::with_opts(station(
+                    "observation_relative_humidity_pct",
+                    "Current relative humidity (%)",
+                ))
+                .unwrap(),
+            ),
+            observation_dew_point: Perishable::new(
+                Gauge::with_opts(station(
+                    "observation_dew_point_deg_c",
+                    "Current dew point (°C)",
+                ))
+                .unwrap(),
+            ),
+            observation_wet_bulb_temperature: Perishable::new(
+                Gauge::with_opts(station(
+                    "observation_wet_bulb_temperature_deg_c",
+                    "Current wet bulb temperature (°C)",
+                ))
+                .unwrap(),
+            ),
+            observation_apparent_temperature: Perishable::new(
+                Gauge::with_opts(station(
+                    "observation_apparent_temperature_deg_c",
+                    "Current apparent temperature, Steadman formula (°C)",
+                ))
+                .unwrap(),
+            ),
+            observation_illuminance: Perishable::new(
+                Gauge::with_opts(station(
+                    "observation_illuminance_lux",
+                    "Current photometric illuminance (lux)",
+                ))
+                .unwrap(),
+            ),
+            observation_irradiance: Perishable::new(
+                Gauge::with_opts(station(
+                    "observation_irradiance_w_per_m2",
+                    "Current radiometric irradiance (W·m^-2)",
+                ))
+                .unwrap(),
+            ),
+            observation_uv_index: Perishable::new(
+                Gauge::with_opts(station("observation_uv_index", "Current ultraviolet index"))
+                    .unwrap(),
+            ),
             observation_rain: Histogram::with_opts(
                 HistogramOpts::from(station("observation_rain", "Rain observed (mm·min^-1)"))
                     .buckets(
@@ -174,44 +202,34 @@ impl ExportedMetrics {
             .register(Box::new(self.exporter_messages_received.clone()))
             .unwrap();
 
-        self.instant_wind.register_all(registry);
+        self.instant_wind.map(|m| m.register_all(registry));
 
         registry
             .register(Box::new(self.observation_timestamp.clone()))
             .unwrap();
-        self.observation_wind_lull.register_all(registry);
-        self.observation_wind_avg.register_all(registry);
-        self.observation_wind_gust.register_all(registry);
-        registry
-            .register(Box::new(self.observation_station_pressure.clone()))
-            .unwrap();
-        registry
-            .register(Box::new(self.observation_barometric_pressure.clone()))
-            .unwrap();
-        registry
-            .register(Box::new(self.observation_temperature.clone()))
-            .unwrap();
-        registry
-            .register(Box::new(self.observation_relative_humidity.clone()))
-            .unwrap();
-        registry
-            .register(Box::new(self.observation_dew_point.clone()))
-            .unwrap();
-        registry
-            .register(Box::new(self.observation_wet_bulb_temperature.clone()))
-            .unwrap();
-        registry
-            .register(Box::new(self.observation_apparent_temperature.clone()))
-            .unwrap();
-        registry
-            .register(Box::new(self.observation_illuminance.clone()))
-            .unwrap();
-        registry
-            .register(Box::new(self.observation_irradiance.clone()))
-            .unwrap();
-        registry
-            .register(Box::new(self.observation_uv_index.clone()))
-            .unwrap();
+        self.observation_wind_lull.map(|m| m.register_all(registry));
+        self.observation_wind_avg.map(|m| m.register_all(registry));
+        self.observation_wind_gust.map(|m| m.register_all(registry));
+        self.observation_station_pressure
+            .map(|m| registry.register(Box::new(m.clone())).unwrap());
+        self.observation_barometric_pressure
+            .map(|m| registry.register(Box::new(m.clone())).unwrap());
+        self.observation_temperature
+            .map(|m| registry.register(Box::new(m.clone())).unwrap());
+        self.observation_relative_humidity
+            .map(|m| registry.register(Box::new(m.clone())).unwrap());
+        self.observation_dew_point
+            .map(|m| registry.register(Box::new(m.clone())).unwrap());
+        self.observation_wet_bulb_temperature
+            .map(|m| registry.register(Box::new(m.clone())).unwrap());
+        self.observation_apparent_temperature
+            .map(|m| registry.register(Box::new(m.clone())).unwrap());
+        self.observation_illuminance
+            .map(|m| registry.register(Box::new(m.clone())).unwrap());
+        self.observation_irradiance
+            .map(|m| registry.register(Box::new(m.clone())).unwrap());
+        self.observation_uv_index
+            .map(|m| registry.register(Box::new(m.clone())).unwrap());
         registry
             .register(Box::new(self.observation_rain.clone()))
             .unwrap();
@@ -250,12 +268,16 @@ impl ExportTo for decoder::RapidWind {
             .exporter_messages_received
             .with_label_values(&["instant_wind"])
             .inc();
-        metrics.instant_wind.export(&self.wind);
+        metrics
+            .instant_wind
+            .freshen(Duration::seconds(15))
+            .export(&self.wind);
     }
 }
 
 impl ExportTo for decoder::Observation {
     fn export_to(&self, metrics: &ExportedMetrics, station_params: &StationParams) {
+        let valid_time = Duration::minutes(3);
         metrics
             .exporter_messages_received
             .with_label_values(&["observation"])
@@ -264,28 +286,66 @@ impl ExportTo for decoder::Observation {
             .observation_timestamp
             .set(self.timestamp.timestamp());
         if let Some(wind) = &self.wind {
-            metrics.observation_wind_lull.export(&wind.lull);
-            metrics.observation_wind_avg.export(&wind.avg);
-            metrics.observation_wind_gust.export(&wind.gust);
+            metrics
+                .observation_wind_lull
+                .freshen(valid_time)
+                .export(&wind.lull);
+            metrics
+                .observation_wind_avg
+                .freshen(valid_time)
+                .export(&wind.avg);
+            metrics
+                .observation_wind_gust
+                .freshen(valid_time)
+                .export(&wind.gust);
         }
-        self.station_pressure
-            .map(|v| metrics.observation_station_pressure.set(v));
-        self.barometric_pressure(station_params.elevation)
-            .map(|v| metrics.observation_barometric_pressure.set(v));
+        self.station_pressure.map(|v| {
+            metrics
+                .observation_station_pressure
+                .freshen(valid_time)
+                .set(v)
+        });
+        self.barometric_pressure(station_params.elevation).map(|v| {
+            metrics
+                .observation_barometric_pressure
+                .freshen(valid_time)
+                .set(v)
+        });
         self.air_temperature
-            .map(|v| metrics.observation_temperature.set(v));
-        self.relative_humidity
-            .map(|v| metrics.observation_relative_humidity.set(v));
+            .map(|v| metrics.observation_temperature.freshen(valid_time).set(v));
+        self.relative_humidity.map(|v| {
+            metrics
+                .observation_relative_humidity
+                .freshen(valid_time)
+                .set(v)
+        });
         self.dew_point()
-            .map(|v| metrics.observation_dew_point.set(v));
-        self.wet_bulb_temperature()
-            .map(|v| metrics.observation_wet_bulb_temperature.set(v));
-        self.apparent_temperature()
-            .map(|v| metrics.observation_apparent_temperature.set(v));
+            .map(|v| metrics.observation_dew_point.freshen(valid_time).set(v));
+        self.wet_bulb_temperature().map(|v| {
+            metrics
+                .observation_wet_bulb_temperature
+                .freshen(valid_time)
+                .set(v)
+        });
+        self.apparent_temperature().map(|v| {
+            metrics
+                .observation_apparent_temperature
+                .freshen(valid_time)
+                .set(v)
+        });
         if let Some(solar) = &self.solar {
-            metrics.observation_illuminance.set(solar.illuminance);
-            metrics.observation_irradiance.set(solar.irradiance);
-            metrics.observation_uv_index.set(solar.ultraviolet_index);
+            metrics
+                .observation_illuminance
+                .freshen(valid_time)
+                .set(solar.illuminance);
+            metrics
+                .observation_irradiance
+                .freshen(valid_time)
+                .set(solar.irradiance);
+            metrics
+                .observation_uv_index
+                .freshen(valid_time)
+                .set(solar.ultraviolet_index);
         }
         if let Some(precip) = &self.precip {
             metrics

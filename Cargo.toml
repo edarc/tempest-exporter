@@ -13,6 +13,7 @@ exclude = [
 [dependencies]
 anyhow = "1.0"
 chrono = { version = "0.4", features = [ "serde" ] }
+crossbeam-utils = "0.8"
 futures-core = "0.3"
 http = "0.2"
 log = { version = "0.4", features = [ "serde" ] }
